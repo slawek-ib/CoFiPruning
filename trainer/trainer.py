@@ -96,7 +96,7 @@ class CoFiTrainer(Trainer):
         self.additional_args = additional_args
 
         self.l0_module = l0_module
-        self.prepruning_finetune_steps = 100
+        self.prepruning_finetune_steps = 0
         self.start_prune = False
 
         self.l0_optimizer = None
@@ -181,7 +181,7 @@ class CoFiTrainer(Trainer):
 
         if self.l0_module is not None:
             lagrangian_warmup_steps = self.additional_args.lagrangian_warmup_epochs * num_update_steps_per_epoch #! 24544
-            # self.prepruning_finetune_steps = self.additional_args.prepruning_finetune_epochs * num_update_steps_per_epoch
+            self.prepruning_finetune_steps = self.additional_args.prepruning_finetune_epochs * num_update_steps_per_epoch
             self.l0_module.set_lagrangian_warmup_steps(lagrangian_warmup_steps)
             logger.info(f"Prepruning finetune steps: {self.prepruning_finetune_steps}")
             logger.info(f"Lagrangian warmup steps: {lagrangian_warmup_steps}")
@@ -379,7 +379,7 @@ class CoFiTrainer(Trainer):
         # wandb.log({'global_step':self.global_step,'training_loss':tr_loss.item() / self.global_step})
         return TrainOutput(self.global_step, tr_loss.item() / self.global_step, None)
 
-    def prediction_loop(self, dataloader: DataLoader, description: str, prediction_loss_only: Optional[bool] = None) -> PredictionOutput:
+    def prediction_loop(self, dataloader: DataLoader, description: str, prediction_loss_only: Optional[bool] = None, orig_dataset=None) -> PredictionOutput:
         prediction_loss_only = (
             prediction_loss_only if prediction_loss_only is not None else self.args.prediction_loss_only
         )
@@ -470,8 +470,11 @@ class CoFiTrainer(Trainer):
                 all_labels, labels, padding_index=-100)
 
         if self.compute_metrics is not None and all_preds is not None and all_labels is not None:
+
             metrics = self.compute_metrics(EvalPrediction(
-                predictions=all_preds, label_ids=all_labels))
+                predictions=all_preds, label_ids=all_labels),
+                orig_dataset
+                )
         else:
             metrics = {}
 
@@ -497,45 +500,52 @@ class CoFiTrainer(Trainer):
         return PredictionOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics)
 
     def evaluate(self, eval_dataset: Optional[Dataset] = None) -> Tuple[Dict[str, float], List]:
+        eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
         output = self.prediction_loop(
-            eval_dataloader, description="Evaluation")
-
-        self.log(output.metrics)
+            eval_dataloader, description="Evaluation", orig_dataset=eval_dataset)
+        to_keep= ['head_layers', 'mlp_layers', 'hidden_dims', 'intermediate_dims', 'head_nums', 
+        'pruned_params', 'remaining_params', 'pruned_model_sparsity', 'expected_sparsity', 'target_sparsity',
+        'average_token_level_macro_f1', 'average_field_level_macro_f1']
+        metrics = {
+            key: output.metrics[key] for key in to_keep if key in output.metrics
+        }
+        self.log(metrics)
         # wandb.log(output.metrics)
-        output.metrics["step"] = self.global_step
+        if hasattr(self, 'global_step'):
+            output.metrics["step"] = self.global_step
 
-        logger.info(f"Evaluating: {output.metrics}")
+        logger.info(f"Evaluating: {metrics}")
 
-        eval_score = 0
+        # eval_score = 0
 
-        name = glue_tasks[self.model.config.finetuning_task]
-        if isinstance(name, str):
-            if name in output.metrics:
-                eval_score = output.metrics[name]
-        else:
-            for na in name:
-                if na in output.metrics:
-                    eval_score = output.metrics[na]
-                    break
+        # name = glue_tasks[self.model.config.finetuning_task]
+        # if isinstance(name, str):
+        #     if name in output.metrics:
+        #         eval_score = output.metrics[name]
+        # else:
+        #     for na in name:
+        #         if na in output.metrics:
+        #             eval_score = output.metrics[na]
+        #             break
 
-        # logger.info(f"starting saving best: {self.global_step} {self.start_saving_best}")
+        # # logger.info(f"starting saving best: {self.global_step} {self.start_saving_best}")
 
-        if self.start_saving_best:
-            best_so_far = self.eval_counter.update(
-                self.epoch, self.global_step, eval_score)
-            if best_so_far:
-                best_dir = os.path.join(self.args.output_dir, "best")
-                if not os.path.exists(best_dir):
-                    os.makedirs(best_dir)
+        # if self.start_saving_best:
+        #     best_so_far = self.eval_counter.update(
+        #         self.epoch, self.global_step, eval_score)
+        #     if best_so_far:
+        #         best_dir = os.path.join(self.args.output_dir, "best")
+        #         if not os.path.exists(best_dir):
+        #             os.makedirs(best_dir)
 
-                if self.l0_module is not None:
-                    zs = self.l0_module.forward(training=False)
-                    torch.save(zs, os.path.join(best_dir, "zs.pt"))
-                    torch.save(self.l0_module, os.path.join(
-                        best_dir, "l0_module.pt"))
-                logger.info(f"Saving the best model so far: [Epoch {int(self.epoch)} | Step: {self.global_step} | Model size: {output.metrics['remaining_params'] if 'remaining_params' in output.metrics else 'Full' } | Score: {round(eval_score, 5)}]")
-                self.model.save_pretrained(best_dir)
+        #         if self.l0_module is not None:
+        #             zs = self.l0_module.forward(training=False)
+        #             torch.save(zs, os.path.join(best_dir, "zs.pt"))
+        #             torch.save(self.l0_module, os.path.join(
+        #                 best_dir, "l0_module.pt"))
+        #         logger.info(f"Saving the best model so far: [Epoch {int(self.epoch)} | Step: {self.global_step} | Model size: {output.metrics['remaining_params'] if 'remaining_params' in output.metrics else 'Full' } | Score: {round(eval_score, 5)}]")
+        #         self.model.save_pretrained(best_dir)
 
         return output.metrics
 

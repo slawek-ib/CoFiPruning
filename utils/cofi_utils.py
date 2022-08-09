@@ -185,8 +185,9 @@ def prune_model_with_z(zs, model):
         
         # accommodate for different models
         if hasattr(model, "classifier"):
-            if hasattr(model.classifier, "dense"):
-                model.classifier.dense = prune_linear_layer(model.classifier.dense, index, dim=1)
+            # if hasattr(model.classifier, "dense"):
+            #     model.classifier.dense = prune_linear_layer(model.classifier.dense, index, dim=1)
+            model.classifier = prune_linear_layer(model.classifier, index, dim=1)
         if hasattr(model, "cls"):
             if hasattr(model.cls, "dense"):
                 model.cls.dense = prune_linear_layer(model.classifier.dense, index, dim=1)
