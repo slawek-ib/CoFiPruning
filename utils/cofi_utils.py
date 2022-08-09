@@ -50,10 +50,18 @@ def load_l0_module(model_path):
     else:
         return None
 
+def get_base_model(model):
+    if hasattr(model, "bert"): return model.bert  
+    if hasattr(model, "roberta"): return model.roberta
+    if hasattr(model, "layoutlm"): return model.layoutlm
+    return None
+
+
 # z values could be in [0, 1), we update the parameters accordingly with z values
 def update_params(model, zs):
-    bert = model.bert if hasattr(model, "bert") else model.roberta
 
+     
+    bert = get_base_model(model)
     config = model.config
     hidden_dims = config.hidden_size
     num_heads = config.num_attention_heads
@@ -91,6 +99,11 @@ def update_params(model, zs):
                 bert.embeddings.position_embeddings.weight.data.mul(hidden_z)
             bert.embeddings.token_type_embeddings.weight.data = \
                 bert.embeddings.token_type_embeddings.weight.data.mul(hidden_z)
+            additional_embeddings = ['x_position_embeddings', 'y_position_embeddings','h_position_embeddings', 'w_position_embeddings']
+            for emb_name in additional_embeddings:
+                if hasattr(bert.embeddings, emb_name):
+                    emb = getattr(bert.embeddings, emb_name)
+                    emb.weight.data = emb.weight.data.mul(hidden_z)
             for layer in range(num_layers):
                 bert.encoder.layer[layer].attention.self.key.weight.data = bert.encoder.layer[layer].attention.self.key.weight.data.mul(hidden_z)
                 bert.encoder.layer[layer].attention.self.query.weight.data = bert.encoder.layer[layer].attention.self.query.weight.data.mul(hidden_z)
@@ -108,7 +121,7 @@ def update_params(model, zs):
 def prune_model_with_z(zs, model):
     if zs is None:
         return None, None
-    bert = model.bert if hasattr(model, "bert") else model.roberta
+    bert = get_base_model(model)
    
     if "head_z" in zs:
         head_z = zs.get("head_z", None)
@@ -162,6 +175,13 @@ def prune_model_with_z(zs, model):
         bert.embeddings.token_type_embeddings.weight = torch.nn.parameter.Parameter(
             bert.embeddings.token_type_embeddings.weight.index_select(1, index).clone().detach())
         bert.embeddings.token_type_embeddings.embedding_dim = index.shape[0]
+        additional_embeddings = ['x_position_embeddings', 'y_position_embeddings','h_position_embeddings', 'w_position_embeddings']
+        for emb_name in additional_embeddings:
+            if hasattr(bert.embeddings, emb_name):
+                emb = getattr(bert.embeddings, emb_name)
+                emb.weight = torch.nn.parameter.Parameter(
+                    emb.weight.index_select(1, index).clone().detach())
+                emb.embedding_dim = index.shape[0]
         prune_layer_norm(bert.embeddings.LayerNorm, index)
 
         for layer in range(0, 12):
@@ -228,7 +248,7 @@ def prune_model_with_z(zs, model):
 
 
 def prune_intermediate_layers(model, keep_dims):
-    bert = model.bert if hasattr(model, "bert") else model.roberta
+    bert = get_base_model(model)
     device = model.device
     for layer in keep_dims:
         if len(keep_dims[layer]) == 0:
@@ -260,8 +280,13 @@ def load_pruned_model(model, weights):
     dim_per_head = config.hidden_size // config.num_attention_heads
     zs = {}
 
+    
     architecture = config.architectures[0].lower()
-    bert_name = "roberta" if "roberta" in architecture else "bert"
+    for arch in ["roberta", "bert", "layoutlm"]:
+        if arch in architecture:
+            bert_name = arch
+            break
+
     
     hidden_z = torch.zeros(config.hidden_size)
     hidden_z[:weights[f"{bert_name}.embeddings.word_embeddings.weight"].shape[1]] = 1

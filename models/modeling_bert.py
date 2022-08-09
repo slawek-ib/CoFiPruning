@@ -126,7 +126,7 @@ class CoFiBertForTokenClassification(BertForTokenClassification):
             intermediate_z=intermediate_z,
             mlp_z=mlp_z,
             hidden_z=hidden_z
-        ) #! [32, 68, 768]
+        )
         
         sequence_output = outputs[0]
         sequence_output = self.dropout(sequence_output)
@@ -146,32 +146,7 @@ class CoFiBertForTokenClassification(BertForTokenClassification):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
-        # pooled_output = outputs[1]
 
-        # pooled_output = self.dropout(pooled_output)
-        # logits = self.classifier(pooled_output) #! [32, 3]
-
-        # loss = None
-        # if labels is not None:
-        #     if self.num_labels == 1:
-        #         #  We are doing regression
-        #         loss_fct = MSELoss()
-        #         loss = loss_fct(logits.view(-1), labels.view(-1))
-        #     else:
-        #         loss_fct = CrossEntropyLoss()
-        #         loss = loss_fct(
-        #             logits.view(-1, self.num_labels), labels.view(-1))
-
-        # if not return_dict:
-        #     output = (logits,) + outputs[2:]
-        #     return ((loss,) + output) if loss is not None else output
-
-        # return SequenceClassifierOutput(
-        #     loss=loss,
-        #     logits=logits,
-        #     hidden_states=outputs.hidden_states,
-        #     attentions=outputs.attentions,
-        # )
 
 class CoFiBertForSequenceClassification(BertForSequenceClassification):
     def __init__(self, config):
@@ -344,6 +319,7 @@ class CoFiBertModel(BertModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        
         head_layer_z=None,
         head_z=None,
         intermediate_z=None,

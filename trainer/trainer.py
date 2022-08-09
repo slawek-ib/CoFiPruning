@@ -673,7 +673,7 @@ class CoFiTrainer(Trainer):
             with torch.no_grad():
                 # only retain inputs of certain keys
                 teacher_inputs_keys = ["input_ids", "attention_mask", "token_type_ids", "position_ids", "labels",
-                                       "output_attentions", "output_hidden_states", "return_dict"]
+                                       "output_attentions", "output_hidden_states", "return_dict", "bbox"]
                 teacher_inputs = {key: inputs[key]
                                   for key in teacher_inputs_keys if key in inputs}
                 self.shortens_inputs(teacher_inputs)
