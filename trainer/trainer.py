@@ -506,10 +506,11 @@ class CoFiTrainer(Trainer):
             eval_dataloader, description="Evaluation", orig_dataset=eval_dataset)
         to_keep= ['head_layers', 'mlp_layers', 'hidden_dims', 'intermediate_dims', 'head_nums', 
         'pruned_params', 'remaining_params', 'pruned_model_sparsity', 'expected_sparsity', 'target_sparsity',
-        'average_token_level_macro_f1', 'average_field_level_macro_f1']
+        'average_token_level_macro_f1', 'average_field_level_macro_f1',]
         metrics = {
             key: output.metrics[key] for key in to_keep if key in output.metrics
         }
+        metrics['step']=self.global_step
         self.log(metrics)
         # wandb.log(output.metrics)
         if hasattr(self, 'global_step'):
@@ -529,23 +530,25 @@ class CoFiTrainer(Trainer):
         #             eval_score = output.metrics[na]
         #             break
 
-        # # logger.info(f"starting saving best: {self.global_step} {self.start_saving_best}")
+        # # 
 
-        # if self.start_saving_best:
-        #     best_so_far = self.eval_counter.update(
-        #         self.epoch, self.global_step, eval_score)
-        #     if best_so_far:
-        #         best_dir = os.path.join(self.args.output_dir, "best")
-        #         if not os.path.exists(best_dir):
-        #             os.makedirs(best_dir)
+        if self.start_saving_best:
+            logger.info(f"Checking saving best at step: {self.global_step}")
+            eval_score = metrics['average_token_level_macro_f1']
+            best_so_far = self.eval_counter.update(
+                self.epoch, self.global_step, eval_score)
+            if best_so_far:
+                best_dir = os.path.join(self.args.output_dir, "best")
+                if not os.path.exists(best_dir):
+                    os.makedirs(best_dir)
 
-        #         if self.l0_module is not None:
-        #             zs = self.l0_module.forward(training=False)
-        #             torch.save(zs, os.path.join(best_dir, "zs.pt"))
-        #             torch.save(self.l0_module, os.path.join(
-        #                 best_dir, "l0_module.pt"))
-        #         logger.info(f"Saving the best model so far: [Epoch {int(self.epoch)} | Step: {self.global_step} | Model size: {output.metrics['remaining_params'] if 'remaining_params' in output.metrics else 'Full' } | Score: {round(eval_score, 5)}]")
-        #         self.model.save_pretrained(best_dir)
+                if self.l0_module is not None:
+                    zs = self.l0_module.forward(training=False)
+                    torch.save(zs, os.path.join(best_dir, "zs.pt"))
+                    torch.save(self.l0_module, os.path.join(
+                        best_dir, "l0_module.pt"))
+                logger.info(f"Saving the best model so far: [Epoch {int(self.epoch)} | Step: {self.global_step} | Model size: {output.metrics['remaining_params'] if 'remaining_params' in output.metrics else 'Full' } | Score: {round(eval_score, 5)}]")
+                self.model.save_pretrained(best_dir)
 
         return output.metrics
 
