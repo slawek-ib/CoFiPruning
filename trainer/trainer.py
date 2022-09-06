@@ -351,14 +351,14 @@ class CoFiTrainer(Trainer):
 
                         self.log(logs)
 
-                    if self.global_step % self.args.eval_steps == 0:
-                        self.evaluate()
+                    #if self.global_step % self.args.eval_steps == 0:
+                        
 
                 epoch_pbar.update(1)
 
                 if self.args.max_steps > 0 and self.global_step >= self.args.max_steps:
                     break
-
+            self.evaluate()
             epoch_end = time.time()
             # wandb.log({'epoch':epoch})
             logger.info(
